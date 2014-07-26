@@ -2,6 +2,8 @@
 #include <Gamebuino.h>
 Gamebuino gb;
 
+#include "Copter.h"
+
 extern const byte font5x7[];
 
 void setup() {

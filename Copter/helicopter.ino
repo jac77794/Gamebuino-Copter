@@ -1,40 +1,42 @@
-float heli_rise_rate = 0.3;
-float heli_rise_maxvel = 2;
-float heli_fall_rate = 0.4;
-float heli_fall_maxvel = -2.5;
-float heli_vel = 0;
-int heli_x = 5;
-float heli_y = LCDHEIGHT/2;
-int heli_size = 3;
+// helicopter (player) object
+
+float rise_rate = 0.3;
+float rise_max = 2;
+float fall_rate = 0.4;
+float fall_max = -2.5;
+
+Helicopter heli;
 
 void init_heli() {
-	heli_vel = 0;
-	heli_y = LCDHEIGHT/2;
+	heli.size = 3;
+	heli.x = 4;
+	heli.y = LCDHEIGHT/2;
+	heli.yv = 0;
 }
 
 void update_heli() {
 	if (gb.buttons.repeat(BTN_A,1) || gb.buttons.repeat(BTN_B,1)) {
-		heli_vel = heli_vel+heli_rise_rate;
-		if (heli_vel > heli_rise_maxvel) {
-			heli_vel = heli_rise_maxvel;
+		heli.yv = heli.yv+rise_rate;
+		if (heli.yv > rise_max) {
+			heli.yv = rise_max;
 		}
 	}
 	else {
-		heli_vel = heli_vel-heli_fall_rate;
-		if (heli_vel < heli_fall_maxvel) {
-			heli_vel = heli_fall_maxvel;
+		heli.yv = heli.yv-fall_rate;
+		if (heli.yv < fall_max) {
+			heli.yv = fall_max;
 		}
 	}
 
-	heli_y = heli_y-heli_vel;
-	if ((heli_y+heli_size) > LCDHEIGHT) {
-		heli_y = LCDHEIGHT-heli_size;
+	heli.y = heli.y-heli.yv;
+	if ((heli.y+heli.size) > LCDHEIGHT) {
+		heli.y = LCDHEIGHT-heli.size;
 	}
-	else if (heli_y < 0) {
-		heli_y = 0;
+	else if (heli.y < 0) {
+		heli.y = 0;
 	}
 }
 
 void draw_heli() {
-	gb.display.fillRect(heli_x, (int)heli_y, heli_size, heli_size);
+	gb.display.fillRect(heli.x, (int)heli.y, heli.size, heli.size);
 }

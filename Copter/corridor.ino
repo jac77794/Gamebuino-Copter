@@ -1,121 +1,161 @@
-int corridor_part_width = 4;
-int corridor_size_init = 44;
-int corridor_size = corridor_size_init*1;
-int corridor_size_min = 12;
-int corridor_max_parts = 21; // derived from LCDWIDTH/corridor_part_width
-int corridor_progress = 0;
+// corridor generation
 
-int corridor_reduce_rate = 120;
-float corridor_reduce_mult = 0.9;
-int corridor_gate_length[2] = {2,5};
-int corridor_gate_freq[2] = {20,60};
-int corridor_gate_size_max = 20;
-int corridor_gate_size_min = 9;
-int corridor_gate_do_next = 100;
-int corridor_gate_size_now = 25;
-int corridor_gate_length_now = 2;
+/*
+config
+*/
 
-// arrays have length=corridor_max_parts
-float corridor_h[21];
-float corridor_y[21];
+int game_speed = 4;
 
-float corridor_yv = 0;
-float corridor_yv_gran = 100;
-float corridor_yv_range = 2;
-float corridor_yv_dirchangerate[2] = {20,60};
-float corridor_yv_dirchange_do_next = 100;
+float size_max = 44;
+float size_min = 12;
+
+int reduce_next = 30; // fixed rate of reduction for fairness in repeat plays
+float reduce_mult = 0.9;
+
+float yv_granularity = 100;
+float yv_change_range = 2;
+float yv_change_next_range[2] = {4,12};
+
+int gate_size_max = 20;
+int gate_size_min = 9;
+float gate_length_range[2] = {2,5};
+float gate_next_range[2] = {5,15};
+int gate_first = 60;
+
+bool debug = false;
+
+/*
+runtime
+*/
+
+CorridorPart corridor[21]; // length derived from (LCDWIDTH / game_speed), update if game_speed changed
+
+int progress;
+float last_h;
+float last_y;
+
+float yv;
+int yv_change_next;
+
+int gate_next;
+int gate_size;
+int gate_length;
+
+int max_parts;
+int last_part;
 
 void init_corridor() {
-	corridor_progress = 0;
-	corridor_size = corridor_size_init;
-	corridor_gate_do_next = 100;
-	corridor_yv = 0;
-	corridor_yv_dirchange_do_next = 100;
+	max_parts = LCDWIDTH/game_speed;
+	last_part = max_parts-1;
 
-	int def_y = (LCDHEIGHT-corridor_size)/2;
-	for (int i = 0; i < corridor_max_parts; i++) {
-		corridor_h[i] = corridor_size;
-		corridor_y[i] = def_y;
+	// reset runtime vars
+	progress = 0;
+	last_h = size_max;
+	last_y = LCDHEIGHT/2;
+	yv = 0;
+	yv_change_next = game_speed*reduce_next;
+	gate_next = gate_first;
+
+	// reset corridor parts
+	for (int i = 0; i < max_parts; i++) {
+		CorridorPart c;
+		c.h = last_h;
+		c.y = last_y;
+		corridor[i] = c;
 	}
 }
 
 void update_corridor() {
-	corridor_progress++;
-	randomSeed(corridor_progress*micros());
+	progress++;
+	randomSeed(progress*micros());
 
-	for (int i = 0; i < corridor_max_parts-1; i++) {
-		corridor_h[i] = corridor_h[i+1];
-		corridor_y[i] = corridor_y[i+1];
+	for (int i = 0; i < last_part; i++) {
+		corridor[i] = corridor[i+1];
 	}
 
-	// narrow gradually
-	if (corridor_progress % corridor_reduce_rate == 0 && corridor_reduce_rate > corridor_size_min) {
-		corridor_size = corridor_size*corridor_reduce_mult;
-		if (corridor_size < corridor_size_min) {
-			corridor_size = corridor_size_min;
-		}
+	float new_h = last_h;
+	float new_y = last_y;
+
+	// narrow gradually (ignore gates)
+	if (progress % (game_speed*reduce_next) == 0 && new_h > size_min) {
+		new_h = max(new_h*reduce_mult, size_min);
+		last_h = new_h;
 	}
 
-	// change direction, speed of corridor
-	if (corridor_progress >= corridor_yv_dirchange_do_next) {
-		corridor_yv_dirchange_do_next += random(corridor_yv_dirchangerate[0], corridor_yv_dirchangerate[1]);
-		corridor_yv = ((random(corridor_yv_gran)-(corridor_yv_gran/2))/corridor_yv_gran)*corridor_yv_range;
-	}
+	if (progress >= gate_next) {
+		// generate a gate
+		gate_next += game_speed*range_random(gate_next_range);
+		gate_length = range_random(gate_length_range);
 
-	// generate gate and randomise next
-	int last_y = corridor_y[corridor_max_parts-2];
-	int last_max_y = last_y+corridor_size;
-	if (corridor_progress >= corridor_gate_do_next) {
-		corridor_gate_do_next += random(corridor_gate_freq[0], corridor_gate_freq[1]);
-		int corridor_this_gate_size_max = corridor_size < corridor_gate_size_max ? corridor_size : corridor_gate_size_max;
-		corridor_gate_size_now = random(corridor_gate_size_min, corridor_this_gate_size_max);
-		corridor_gate_length_now = random(corridor_gate_length[0], corridor_gate_length[1]);
-		corridor_y[corridor_max_parts-1] = random(last_y, last_max_y-corridor_gate_size_now);
-	}
+		float this_gate_size_max = min(new_h, gate_size_max);
+		new_h = random(gate_size_min, this_gate_size_max);
 
-	// finalise values
-	if (corridor_gate_length_now > 0) {
-		corridor_h[corridor_max_parts-1] = corridor_gate_size_now;
-		corridor_gate_length_now--;
+		float y_top = last_y-(last_h/2);
+		float y_bot = last_y+(last_h/2);
+		new_y = random(y_top+(new_h/2), y_bot-(new_h/2));
+	}
+	else if (gate_length > 0) {
+		// gate remains fixed
+		new_h = corridor[last_part].h;
+		new_y = corridor[last_part].y;
+		gate_length--;
 	}
 	else {
-		corridor_h[corridor_max_parts-1] = corridor_size;
-		corridor_y[corridor_max_parts-1] += corridor_yv;
+		// no gate, move corridor as normal
+		if (progress >= yv_change_next) {
+			yv_change_next += game_speed*range_random(yv_change_next_range)*game_speed;
+			yv = (((yv_granularity/2) - random(yv_granularity)) / yv_granularity) * yv_change_range;
+		}
+
+		new_y += yv;
+
+		float y_top = new_y-(new_h/2);
+		float y_bot = new_y+(new_h/2);
+		if (y_top < 0) {
+			new_y = new_y-y_top;
+			yv = -yv;
+		}
+		if (y_bot > LCDHEIGHT) {
+			new_y = new_y-(y_bot-LCDHEIGHT);
+			yv = -yv;
+		}
+
+		last_y = new_y;
 	}
 
-	// reverse direction if hitting a wall
-	if (corridor_y[corridor_max_parts-1] < 0) {
-		corridor_y[corridor_max_parts-1] = 0;
-		corridor_yv = -corridor_yv;
-	}
-	if (corridor_y[corridor_max_parts-1]+corridor_size > LCDHEIGHT) {
-		corridor_y[corridor_max_parts-1] = LCDHEIGHT-corridor_size;
-		corridor_yv = -corridor_yv;
-	}
+	CorridorPart new_c;
+	new_c.h = new_h;
+	new_c.y = new_y;
+	corridor[last_part] = new_c;
 }
 
 void draw_corridor() {
-	for (int l = 0; l < corridor_max_parts; l++) {
-		int x = l*corridor_part_width;
-		int y = corridor_y[l];
-		int h = corridor_h[l];
-		gb.display.fillRect(x, 0, corridor_part_width, y);
-		gb.display.fillRect(x, y+h, corridor_part_width, LCDHEIGHT-(y+h));
+	for (int i = 0; i < max_parts; i++) {
+		CorridorPart c = corridor[i];
+		int x = i*game_speed;
+		int y_top = c.y-(c.h/2);
+		int y_bot = c.y+(c.h/2);
+		gb.display.fillRect(x, 0, game_speed, y_top);
+		gb.display.fillRect(x, y_bot, game_speed, LCDHEIGHT-y_bot);
 	}
 }
 
-extern int heli_x;
-extern float heli_y;
-extern int heli_size;
+extern Helicopter heli;
 
 bool did_crash() {
-	for (int l = 0; l < corridor_max_parts; l++) {
-		int x = l*corridor_part_width;
-		int y = corridor_y[l];
-		int h = corridor_h[l];
-		if (gb.collideRectRect(heli_x, heli_y, heli_size, heli_size, x, 0, corridor_part_width, y) ||
-			gb.collideRectRect(heli_x, heli_y, heli_size, heli_size, x, y+h, corridor_part_width, LCDHEIGHT-(y+h))) {
-				return true;
+	if (debug) {
+		return false;
+	}
+
+	// don't really need to collision test beyond heli.x, room for optimisation
+	for (int i = 0; i < max_parts; i++) {
+		CorridorPart c = corridor[i];
+		int x = i*game_speed;
+		int y_top = c.y-(c.h/2);
+		int y_bot = c.y+(c.h/2);
+		if (gb.collideRectRect(heli.x, heli.y, heli.size, heli.size, x, 0, game_speed, y_top) ||
+			gb.collideRectRect(heli.x, heli.y, heli.size, heli.size, x, y_bot, game_speed, LCDHEIGHT-y_bot)) {
+			return true;
 		}
 	}
 	return false;
@@ -131,5 +171,5 @@ void draw_score() {
 	else {
 		gb.display.setFont(font3x5);
 	}
-	gb.display.print(corridor_progress);
+	gb.display.print(progress);
 }
